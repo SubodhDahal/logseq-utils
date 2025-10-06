@@ -4,7 +4,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Tuple
 
 
 def read_journal_content(file_path: Path) -> Optional[str]:
@@ -146,3 +146,35 @@ def safe_file_append(file_path: Union[str, Path], content: str) -> bool:
     except Exception as exc:
         print(f"❌ Error appending to {file_path}: {exc}")
         return False
+
+
+# ---- Markdown helpers ----
+
+ATX_HEADING_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.*?)\s*(?P<trailing>#+\s*)?$")
+
+
+def parse_atx_heading(line: str) -> Optional[Tuple[int, str]]:
+    """Parse an ATX heading line. Return (level, text) if heading, else None."""
+    match = ATX_HEADING_RE.match(line)
+    if not match:
+        return None
+    level = len(match.group("hashes"))
+    text = match.group("text").strip()
+    return level, text
+
+
+def is_setext_underline(line: str) -> Optional[int]:
+    """Detect Setext underline. Return heading level 1 for '=' or 2 for '-' lines, else None."""
+    stripped = line.strip()
+    if re.fullmatch(r"=+", stripped):
+        return 1
+    if re.fullmatch(r"-+", stripped):
+        return 2
+    return None
+
+
+def make_indent(level: int, width: int = 2) -> str:
+    """Return indentation string of `level` using `width` spaces per level."""
+    if level <= 0:
+        return ""
+    return " " * (level * width)

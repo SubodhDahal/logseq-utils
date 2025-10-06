@@ -38,3 +38,22 @@ Splits large Snipd podcast exports into clean, show-specific Markdown files form
 ```
 python3 snipd_splitter.py <input_file> [output_folder]
 ```
+
+### Markdown to Logseq Outline (`md_to_logseq_outline.py`)
+Converts longform Markdown into a Logseq-style outline, turning headings and paragraphs into nested bullets.
+
+```
+# From a file (default: per-line bullets)
+python3 md_to_logseq_outline.py input.md > outline.md
+
+# From stdin
+cat input.md | python3 md_to_logseq_outline.py > outline.md
+
+# Group consecutive lines into one bullet per paragraph block
+python3 md_to_logseq_outline.py --paragraph-mode blocks input.md
+```
+
+Notes:
+- ATX headings (e.g., `## Title`) become bullets like `- ## Title`.
+- Non-empty lines become bullets under the latest heading; without a heading, they’re top-level.
+- Setext headings (`===`/`---`) are minimally supported.
