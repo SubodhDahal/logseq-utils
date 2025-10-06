@@ -17,6 +17,13 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Set
 from datetime import datetime
 
+# Import shared utilities from project root by adding parent to path
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from utils import sanitize_filename, safe_file_write, safe_file_append, format_current_timestamp  # noqa: E402
+
 
 class SnipdEpisode:
     """Represents a single episode from the Snipd export."""
@@ -351,15 +358,6 @@ class SnipdSplitter:
 
         return shows, show_metadata
 
-    def _sanitize_filename(self, show_name: str) -> str:
-        """Convert show name to Logseq hierarchical filename with namespace."""
-        # Remove/replace problematic characters using class constants
-        filename = re.sub(self.INVALID_FILENAME_CHARS, '-', show_name)
-        filename = re.sub(self.PARENTHESES_PATTERN, '', filename)
-        filename = filename.strip('._-')
-
-        # Add Podcasts namespace with triple underscore separator
-        return f"Podcasts___{filename}"
 
     def _get_existing_episode_titles(self, file_path: Path) -> Set[str]:
         """Extract episode titles from an existing show file."""
@@ -383,29 +381,11 @@ class SnipdSplitter:
 
         return titles
 
-    def _safe_file_write(self, file_path: Path, content: str) -> bool:
-        """Safely write content to a file with error handling."""
-        try:
-            with open(file_path, 'w', encoding='utf-8') as file:
-                file.write(content)
-            return True
-        except Exception as e:
-            print(f"❌ Error writing to {file_path}: {e}")
-            return False
 
-    def _safe_file_append(self, file_path: Path, content: str) -> bool:
-        """Safely append content to a file with error handling."""
-        try:
-            with open(file_path, 'a', encoding='utf-8') as file:
-                file.write(content)
-            return True
-        except Exception as e:
-            print(f"❌ Error appending to {file_path}: {e}")
-            return False
 
     def _format_timestamp(self) -> str:
         """Get current timestamp for logging."""
-        return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        return format_current_timestamp()
 
     def _prepare_episode_content(self, episodes: List[SnipdEpisode]) -> str:
         """Transform episodes to content string."""
@@ -423,10 +403,10 @@ class SnipdSplitter:
             print(f"   📄 {show_name}: No new episodes to add")
             return True
 
-        timestamp_header = f"\n<!-- New episodes added on {self._format_timestamp()} -->\n"
+        timestamp_header = f"\n<!-- New episodes added on {format_current_timestamp()} -->\n"
         new_content = timestamp_header + self._prepare_episode_content(new_episodes)
 
-        if self._safe_file_append(file_path, new_content):
+        if safe_file_append(file_path, new_content):
             print(f"   ✅ Updated {filename}: {len(new_episodes)} new episodes")
             return True
         return False
@@ -440,7 +420,7 @@ class SnipdSplitter:
             self._prepare_episode_content(episodes)
         ]
 
-        if self._safe_file_write(file_path, ''.join(content_parts)):
+        if safe_file_write(file_path, ''.join(content_parts)):
             print(f"   ✅ Created {filename}: {len(episodes)} episodes with Logseq metadata")
             return True
         return False
@@ -450,7 +430,7 @@ class SnipdSplitter:
         print(f"📝 Writing show files to {self.output_dir}")
 
         for show_name, episodes in shows.items():
-            filename = f"{self._sanitize_filename(show_name)}.md"
+            filename = f"{sanitize_filename(show_name)}.md"
             file_path = self.output_dir / filename
 
             # Get existing episodes to avoid duplicates

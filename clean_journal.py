@@ -17,6 +17,7 @@ from utils import (
     find_journal_files,
     parse_date,
     read_journal_content,
+    get_indentation_level,
 )
 
 # ---- Data Structures ----
@@ -108,10 +109,6 @@ def filter_out_today_and_future(
 
 
 # ---- Section Parsing and Analysis ----
-
-def get_indentation_level(line: str) -> int:
-    """Get the indentation level of a line (number of leading tabs/spaces)."""
-    return len(line) - len(line.lstrip())
 
 
 def is_section_heading(line: str) -> bool:

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 
 def read_journal_content(file_path: Path) -> Optional[str]:
@@ -93,3 +94,55 @@ def parse_date(date_str: Optional[str] = None) -> datetime:
     except ValueError as e:
         print(f"Error parsing date: {e}")
         return datetime.now()
+
+
+# ---- Common, reusable helpers ----
+
+def get_indentation_level(line: str) -> int:
+    """Return number of leading whitespace characters (spaces/tabs) in a line."""
+    return len(line) - len(line.lstrip())
+
+
+def format_current_timestamp() -> str:
+    """Return current timestamp formatted as YYYY-MM-DD HH:MM:SS."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def sanitize_filename(name: str) -> str:
+    """Sanitize a filename by removing or replacing problematic characters.
+
+    - Replaces characters invalid on common filesystems with '-'
+    - Removes parentheses
+    - Trims trailing/leading punctuation artifacts
+    """
+    invalid_pattern = r'[<>:"/\\|?*]'
+    parentheses_pattern = r'[()]'
+
+    sanitized = re.sub(invalid_pattern, '-', name)
+    sanitized = re.sub(parentheses_pattern, '', sanitized)
+    sanitized = sanitized.strip('._-')
+    return sanitized
+
+
+def safe_file_write(file_path: Union[str, Path], content: str) -> bool:
+    """Safely write content to a file with error handling. Returns True on success."""
+    try:
+        path_obj = Path(file_path)
+        with path_obj.open('w', encoding='utf-8') as f:
+            f.write(content)
+        return True
+    except Exception as exc:
+        print(f"❌ Error writing to {file_path}: {exc}")
+        return False
+
+
+def safe_file_append(file_path: Union[str, Path], content: str) -> bool:
+    """Safely append content to a file with error handling. Returns True on success."""
+    try:
+        path_obj = Path(file_path)
+        with path_obj.open('a', encoding='utf-8') as f:
+            f.write(content)
+        return True
+    except Exception as exc:
+        print(f"❌ Error appending to {file_path}: {exc}")
+        return False
