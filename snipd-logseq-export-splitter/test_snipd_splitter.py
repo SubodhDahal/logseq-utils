@@ -18,6 +18,12 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from snipd_splitter import SnipdEpisode, ShowMetadata, SnipdSplitter
+from utils import (
+    sanitize_filename,
+    safe_file_write,
+    safe_file_append,
+    format_current_timestamp,
+)
 
 
 class TestSnipdEpisode(unittest.TestCase):
@@ -187,18 +193,18 @@ class TestSnipdSplitter(unittest.TestCase):
 
     def test_sanitize_filename_basic(self):
         """Test basic filename sanitization."""
-        result = self.splitter._sanitize_filename("Test Show Name")
-        self.assertEqual(result, "Podcasts___Test Show Name")
+        result = sanitize_filename("Test Show Name")
+        self.assertEqual(result, "Test Show Name")
 
     def test_sanitize_filename_special_chars(self):
         """Test filename sanitization with special characters."""
-        result = self.splitter._sanitize_filename("Test/Show<>Name:?*")
-        self.assertEqual(result, "Podcasts___Test-Show--Name")
+        result = sanitize_filename("Test/Show<>Name:?*")
+        self.assertEqual(result, "Test-Show--Name")
 
     def test_sanitize_filename_parentheses(self):
         """Test filename sanitization with parentheses."""
-        result = self.splitter._sanitize_filename("Test Show (Podcast)")
-        self.assertEqual(result, "Podcasts___Test Show Podcast")
+        result = sanitize_filename("Test Show (Podcast)")
+        self.assertEqual(result, "Test Show Podcast")
 
     def test_remove_episode_title_brackets(self):
         """Test removing brackets from episode titles."""
@@ -317,7 +323,7 @@ More content"""
         test_file = Path(self.temp_dir) / "test_write.md"
         content = "Test content"
 
-        result = self.splitter._safe_file_write(test_file, content)
+        result = safe_file_write(test_file, content)
 
         self.assertTrue(result)
         self.assertTrue(test_file.exists())
@@ -330,7 +336,7 @@ More content"""
         append_content = "\nAppended content"
 
         test_file.write_text(initial_content)
-        result = self.splitter._safe_file_append(test_file, append_content)
+        result = safe_file_append(test_file, append_content)
 
         self.assertTrue(result)
         final_content = test_file.read_text()
@@ -338,10 +344,56 @@ More content"""
 
     def test_format_timestamp(self):
         """Test timestamp formatting."""
-        timestamp = self.splitter._format_timestamp()
+        timestamp = format_current_timestamp()
 
         # Should be in format YYYY-MM-DD HH:MM:SS
         self.assertRegex(timestamp, r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}')
+
+    def test_insert_new_episodes_after_properties_on_update(self):
+        """Ensure new episodes are inserted right after the Logseq properties block."""
+        show_name = "Test Show"
+        filename = f"Podcasts___{sanitize_filename(show_name)}.md"
+        show_file = Path(self.temp_dir) / filename
+
+        # Existing file with properties at top and some old content
+        existing_content = (
+            "type:: podcast\n"
+            f"show:: {show_name}\n"
+            "episode-count:: 0\n\n"
+            "OLD_CONTENT\n"
+        )
+        show_file.write_text(existing_content)
+
+        # New episode for the same show
+        new_episode_content = (
+            "- ## [[Brand New Episode]]\n"
+            "  publish-date:: [[2025-01-10]]\n"
+            f"  show:: [[{show_name}]]\n"
+            "\n- ### Summary\n  New summary here.\n"
+        )
+        episode = SnipdEpisode(
+            title="Brand New Episode",
+            show=show_name,
+            content=new_episode_content,
+            publish_date="2025-01-10",
+        )
+
+        splitter = SnipdSplitter(str(self.test_input_file), self.temp_dir)
+        shows = {show_name: [episode]}
+        metadata = {show_name: ShowMetadata(show_name)}
+
+        splitter.write_show_files(shows, metadata)
+
+        updated = show_file.read_text()
+
+        # The timestamp marker and new episode should come before OLD_CONTENT
+        self.assertIn("<!-- New episodes added on ", updated)
+        self.assertLess(
+            updated.find("- ## Brand New Episode"),
+            updated.find("OLD_CONTENT")
+        )
+        # Properties should remain at the very top
+        self.assertTrue(updated.startswith("type:: podcast\n"))
 
     def test_prepare_episode_content(self):
         """Test episode content preparation."""

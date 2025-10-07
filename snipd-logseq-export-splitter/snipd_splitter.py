@@ -397,17 +397,57 @@ class SnipdSplitter:
                 content_parts.append('\n')
         return ''.join(content_parts)
 
+    def _find_properties_insertion_index(self, existing_content: str) -> int:
+        """Return the character index right after the top Logseq properties block.
+
+        The Logseq properties block is assumed to be a set of consecutive lines
+        at the very beginning of the file that match the pattern
+        "<property-name>:: <value>". We also skip any immediately following
+        blank lines to ensure new content starts cleanly after properties.
+        """
+        lines = existing_content.split('\n')
+        idx = 0
+
+        # Walk contiguous property lines from the top of the file
+        prop_line_re = re.compile(r"^\s*[A-Za-z0-9_-]+::\s*")
+        while idx < len(lines) and prop_line_re.match(lines[idx] or ""):
+            idx += 1
+
+        # Skip blank lines immediately after the properties block
+        while idx < len(lines) and (lines[idx] is None or lines[idx].strip() == ""):
+            idx += 1
+
+        # Compute character index from line index
+        # Join with "\n" because we split on "\n" above (dropping separators)
+        prefix = '\n'.join(lines[:idx])
+        # Add back a trailing newline if original content started with at least one line
+        if idx > 0 and not prefix.endswith('\n'):
+            prefix += '\n'
+        return len(prefix)
+
     def _update_existing_show_file(self, file_path: Path, new_episodes: List[SnipdEpisode], show_name: str, filename: str) -> bool:
         """Update an existing show file with new episodes."""
         if not new_episodes:
             print(f"   📄 {show_name}: No new episodes to add")
             return True
 
-        timestamp_header = f"\n<!-- New episodes added on {format_current_timestamp()} -->\n"
-        new_content = timestamp_header + self._prepare_episode_content(new_episodes)
+        # Prepare the new content to insert after the Logseq properties block
+        timestamp_header = f"<!-- New episodes added on {format_current_timestamp()} -->\n"
+        insertion_block = timestamp_header + self._prepare_episode_content(new_episodes)
 
-        if safe_file_append(file_path, new_content):
-            print(f"   ✅ Updated {filename}: {len(new_episodes)} new episodes")
+        try:
+            existing = file_path.read_text(encoding='utf-8')
+        except Exception as exc:
+            print(f"⚠️  Warning: Could not read existing file {file_path}: {exc}")
+            return False
+
+        insert_at = self._find_properties_insertion_index(existing)
+
+        # Build the updated document with the new episodes inserted right after properties
+        updated_content = existing[:insert_at] + insertion_block + ('\n' if insert_at < len(existing) and existing[insert_at] != '\n' else '') + existing[insert_at:]
+
+        if safe_file_write(file_path, updated_content):
+            print(f"   ✅ Updated {filename}: {len(new_episodes)} new episodes (inserted after properties)")
             return True
         return False
 
@@ -430,7 +470,7 @@ class SnipdSplitter:
         print(f"📝 Writing show files to {self.output_dir}")
 
         for show_name, episodes in shows.items():
-            filename = f"{sanitize_filename(show_name)}.md"
+            filename = f"Podcasts___{sanitize_filename(show_name)}.md"
             file_path = self.output_dir / filename
 
             # Get existing episodes to avoid duplicates
