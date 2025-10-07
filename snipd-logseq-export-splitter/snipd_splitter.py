@@ -397,33 +397,66 @@ class SnipdSplitter:
                 content_parts.append('\n')
         return ''.join(content_parts)
 
-    def _find_properties_insertion_index(self, existing_content: str) -> int:
-        """Return the character index right after the top Logseq properties block.
+    def _split_properties_and_body(self, content: str) -> Tuple[List[str], List[str], int]:
+        """Split content into property lines, body lines, and blank line count after properties.
 
-        The Logseq properties block is assumed to be a set of consecutive lines
-        at the very beginning of the file that match the pattern
-        "<property-name>:: <value>". We also skip any immediately following
-        blank lines to ensure new content starts cleanly after properties.
+        Returns:
+            Tuple of (property_lines, body_lines, blank_lines_after_props)
         """
-        lines = existing_content.split('\n')
-        idx = 0
-
-        # Walk contiguous property lines from the top of the file
+        lines = content.split('\n')
         prop_line_re = re.compile(r"^\s*[A-Za-z0-9_-]+::\s*")
-        while idx < len(lines) and prop_line_re.match(lines[idx] or ""):
-            idx += 1
 
-        # Skip blank lines immediately after the properties block
-        while idx < len(lines) and (lines[idx] is None or lines[idx].strip() == ""):
-            idx += 1
+        # Find end of properties block
+        prop_end_idx = 0
+        while prop_end_idx < len(lines) and prop_line_re.match(lines[prop_end_idx] or ""):
+            prop_end_idx += 1
 
-        # Compute character index from line index
-        # Join with "\n" because we split on "\n" above (dropping separators)
-        prefix = '\n'.join(lines[:idx])
-        # Add back a trailing newline if original content started with at least one line
-        if idx > 0 and not prefix.endswith('\n'):
-            prefix += '\n'
-        return len(prefix)
+        # Skip blank lines after properties
+        body_start_idx = prop_end_idx
+        while body_start_idx < len(lines) and (lines[body_start_idx] is None or lines[body_start_idx].strip() == ""):
+            body_start_idx += 1
+
+        blank_count = body_start_idx - prop_end_idx
+        return lines[:prop_end_idx], lines[body_start_idx:], blank_count
+
+    def _get_latest_episode_date(self, episodes: List[SnipdEpisode]) -> str:
+        """Get the latest publish date from a list of episodes."""
+        latest = None
+        for ep in episodes:
+            if ep.publish_date and (latest is None or ep.publish_date > latest):
+                latest = ep.publish_date
+        return latest
+
+    def _update_property_lines(self, prop_lines: List[str], updates: Dict[str, str]) -> List[str]:
+        """Update property values in property lines. Adds missing properties at end.
+
+        Args:
+            prop_lines: List of property lines to update
+            updates: Dict of property names to new values (e.g., {'episode-count': '10'})
+
+        Returns:
+            Updated property lines
+        """
+        updated_lines = []
+        found_props = set()
+
+        for line in prop_lines:
+            updated = False
+            for prop_name, new_value in updates.items():
+                if line.strip().startswith(f'{prop_name}::'):
+                    updated_lines.append(f"{prop_name}:: {new_value}")
+                    found_props.add(prop_name)
+                    updated = True
+                    break
+            if not updated:
+                updated_lines.append(line)
+
+        # Add missing properties at the end
+        for prop_name, new_value in updates.items():
+            if prop_name not in found_props:
+                updated_lines.append(f"{prop_name}:: {new_value}")
+
+        return updated_lines
 
     def _update_existing_show_file(self, file_path: Path, new_episodes: List[SnipdEpisode], show_name: str, filename: str) -> bool:
         """Update an existing show file with new episodes."""
@@ -431,75 +464,47 @@ class SnipdSplitter:
             print(f"   📄 {show_name}: No new episodes to add")
             return True
 
-        # Prepare the new content to insert after the Logseq properties block
-        timestamp_header = f"<!-- New episodes added on {format_current_timestamp()} -->\n"
-        insertion_block = timestamp_header + self._prepare_episode_content(new_episodes)
-
         try:
             existing = file_path.read_text(encoding='utf-8')
         except Exception as exc:
             print(f"⚠️  Warning: Could not read existing file {file_path}: {exc}")
             return False
 
-        # Compute properties and body split indices using the same logic as insertion
-        lines = existing.split('\n')
-        prop_line_re = re.compile(r"^\s*[A-Za-z0-9_-]+::\s*")
-        prop_end_idx = 0
-        while prop_end_idx < len(lines) and prop_line_re.match(lines[prop_end_idx] or ""):
-            prop_end_idx += 1
-        blank_after_props_idx = prop_end_idx
-        while blank_after_props_idx < len(lines) and (lines[blank_after_props_idx] is None or lines[blank_after_props_idx].strip() == ""):
-            blank_after_props_idx += 1
+        # Split content into properties and body
+        prop_lines, body_lines, _ = self._split_properties_and_body(existing)
 
-        prop_lines = lines[:prop_end_idx]
-        body_lines = lines[blank_after_props_idx:]
-
-        # Update episode-count and last-episode-date inside the properties block
+        # Calculate new metadata values
         existing_titles = self._get_existing_episode_titles(file_path)
         total_count = len(existing_titles) + len(new_episodes)
+        latest_new_date = self._get_latest_episode_date(new_episodes)
 
-        # Determine latest new publish date (YYYY-MM-DD) among new episodes
-        latest_new_date = None
-        for ep in new_episodes:
-            if ep.publish_date:
-                if latest_new_date is None or ep.publish_date > latest_new_date:
-                    latest_new_date = ep.publish_date
-
-        # Extract existing last-episode-date from properties if present
+        # Extract existing last-episode-date to compare
         existing_last_date = None
-        updated_prop_lines = []
-        found_count = False
-        found_last_date = False
-        last_date_re = re.compile(r"^\s*last-episode-date::\s*(\S+)")
         for line in prop_lines:
-            if line.strip().startswith('episode-count::'):
-                updated_prop_lines.append(f"episode-count:: {total_count}")
-                found_count = True
-                continue
-            m = last_date_re.match(line)
-            if m:
-                existing_last_date = m.group(1)
-                # Decide on the new last date
-                new_last = existing_last_date
-                if latest_new_date and (not existing_last_date or latest_new_date > existing_last_date):
-                    new_last = latest_new_date
-                updated_prop_lines.append(f"last-episode-date:: {new_last}")
-                found_last_date = True
-                continue
-            updated_prop_lines.append(line)
+            match = re.match(r"^\s*last-episode-date::\s*(\S+)", line)
+            if match:
+                existing_last_date = match.group(1)
+                break
 
-        if not found_count:
-            updated_prop_lines.append(f"episode-count:: {total_count}")
-        if latest_new_date and not found_last_date:
-            # No existing last-episode-date, append a new line
-            updated_prop_lines.append(f"last-episode-date:: {latest_new_date}")
+        # Determine final last-episode-date
+        final_last_date = latest_new_date
+        if existing_last_date and (not latest_new_date or existing_last_date > latest_new_date):
+            final_last_date = existing_last_date
 
-        # Rebuild the updated document: properties, one blank line, insertion block, then body
-        updated_properties_block = '\n'.join(updated_prop_lines) + '\n'
-        updated_body = '\n'.join(body_lines)
-        if updated_body and not updated_body.startswith('\n'):
-            updated_body = '\n' + updated_body
-        updated_content = updated_properties_block + '\n' + insertion_block + updated_body
+        # Update property values
+        updates = {'episode-count': str(total_count)}
+        if final_last_date:
+            updates['last-episode-date'] = final_last_date
+
+        updated_prop_lines = self._update_property_lines(prop_lines, updates)
+
+        # Build new content with episodes inserted after properties
+        timestamp_header = f"<!-- New episodes added on {format_current_timestamp()} -->\n"
+        insertion_block = timestamp_header + self._prepare_episode_content(new_episodes)
+
+        updated_content = '\n'.join(updated_prop_lines) + '\n\n' + insertion_block
+        if body_lines:
+            updated_content += '\n' + '\n'.join(body_lines)
 
         if safe_file_write(file_path, updated_content):
             print(f"   ✅ Updated {filename}: {len(new_episodes)} new episodes (inserted after properties)")
