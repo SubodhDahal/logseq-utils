@@ -359,7 +359,8 @@ More content"""
         existing_content = (
             "type:: podcast\n"
             f"show:: {show_name}\n"
-            "episode-count:: 0\n\n"
+            "episode-count:: 0\n"
+            "last-episode-date:: 2025-01-01\n\n"
             "OLD_CONTENT\n"
         )
         show_file.write_text(existing_content)
@@ -394,6 +395,11 @@ More content"""
         )
         # Properties should remain at the very top
         self.assertTrue(updated.startswith("type:: podcast\n"))
+
+        # Episode count should reflect addition (existing titles are zero in this minimal test)
+        self.assertIn("episode-count:: 1", updated)
+        # last-episode-date should be updated to the latest date
+        self.assertIn("last-episode-date:: 2025-01-10", updated)
 
     def test_prepare_episode_content(self):
         """Test episode content preparation."""

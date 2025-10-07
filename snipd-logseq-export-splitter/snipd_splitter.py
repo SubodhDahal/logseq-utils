@@ -441,10 +441,65 @@ class SnipdSplitter:
             print(f"⚠️  Warning: Could not read existing file {file_path}: {exc}")
             return False
 
-        insert_at = self._find_properties_insertion_index(existing)
+        # Compute properties and body split indices using the same logic as insertion
+        lines = existing.split('\n')
+        prop_line_re = re.compile(r"^\s*[A-Za-z0-9_-]+::\s*")
+        prop_end_idx = 0
+        while prop_end_idx < len(lines) and prop_line_re.match(lines[prop_end_idx] or ""):
+            prop_end_idx += 1
+        blank_after_props_idx = prop_end_idx
+        while blank_after_props_idx < len(lines) and (lines[blank_after_props_idx] is None or lines[blank_after_props_idx].strip() == ""):
+            blank_after_props_idx += 1
 
-        # Build the updated document with the new episodes inserted right after properties
-        updated_content = existing[:insert_at] + insertion_block + ('\n' if insert_at < len(existing) and existing[insert_at] != '\n' else '') + existing[insert_at:]
+        prop_lines = lines[:prop_end_idx]
+        body_lines = lines[blank_after_props_idx:]
+
+        # Update episode-count and last-episode-date inside the properties block
+        existing_titles = self._get_existing_episode_titles(file_path)
+        total_count = len(existing_titles) + len(new_episodes)
+
+        # Determine latest new publish date (YYYY-MM-DD) among new episodes
+        latest_new_date = None
+        for ep in new_episodes:
+            if ep.publish_date:
+                if latest_new_date is None or ep.publish_date > latest_new_date:
+                    latest_new_date = ep.publish_date
+
+        # Extract existing last-episode-date from properties if present
+        existing_last_date = None
+        updated_prop_lines = []
+        found_count = False
+        found_last_date = False
+        last_date_re = re.compile(r"^\s*last-episode-date::\s*(\S+)")
+        for line in prop_lines:
+            if line.strip().startswith('episode-count::'):
+                updated_prop_lines.append(f"episode-count:: {total_count}")
+                found_count = True
+                continue
+            m = last_date_re.match(line)
+            if m:
+                existing_last_date = m.group(1)
+                # Decide on the new last date
+                new_last = existing_last_date
+                if latest_new_date and (not existing_last_date or latest_new_date > existing_last_date):
+                    new_last = latest_new_date
+                updated_prop_lines.append(f"last-episode-date:: {new_last}")
+                found_last_date = True
+                continue
+            updated_prop_lines.append(line)
+
+        if not found_count:
+            updated_prop_lines.append(f"episode-count:: {total_count}")
+        if latest_new_date and not found_last_date:
+            # No existing last-episode-date, append a new line
+            updated_prop_lines.append(f"last-episode-date:: {latest_new_date}")
+
+        # Rebuild the updated document: properties, one blank line, insertion block, then body
+        updated_properties_block = '\n'.join(updated_prop_lines) + '\n'
+        updated_body = '\n'.join(body_lines)
+        if updated_body and not updated_body.startswith('\n'):
+            updated_body = '\n' + updated_body
+        updated_content = updated_properties_block + '\n' + insertion_block + updated_body
 
         if safe_file_write(file_path, updated_content):
             print(f"   ✅ Updated {filename}: {len(new_episodes)} new episodes (inserted after properties)")
