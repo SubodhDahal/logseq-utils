@@ -159,6 +159,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--output",
         help="Output file path. If omitted, writes to stdout.",
     )
+    parser.add_argument(
+        "-i",
+        "--in-place",
+        action="store_true",
+        help="Overwrite the input file with converted output (requires an input path).",
+    )
 
     args = parser.parse_args(argv)
 
@@ -177,9 +183,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         input_text, paragraph_mode=args.paragraph_mode
     )
 
+    # Validate conflicting options
+    if args.in_place and args.output:
+        print("Cannot use --in-place with --output. Choose one destination.", file=sys.stderr)
+        return 2
+
     # Write output
     try:
-        if args.output:
+        if args.in_place:
+            if not args.input:
+                print("--in-place requires an input file path.", file=sys.stderr)
+                return 2
+            with open(args.input, "w", encoding="utf-8") as f:
+                f.write(output_text)
+        elif args.output:
             with open(args.output, "w", encoding="utf-8") as f:
                 f.write(output_text)
         else:

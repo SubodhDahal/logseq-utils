@@ -51,9 +51,16 @@ cat input.md | python3 md_to_logseq_outline.py > outline.md
 
 # Group consecutive lines into one bullet per paragraph block
 python3 md_to_logseq_outline.py --paragraph-mode blocks input.md
+
+# Overwrite input in-place
+python3 md_to_logseq_outline.py -i input.md
+
+# In-place with paragraph blocks
+python3 md_to_logseq_outline.py --paragraph-mode blocks -i input.md
 ```
 
 Notes:
 - ATX headings (e.g., `## Title`) become bullets like `- ## Title`.
 - Non-empty lines become bullets under the latest heading; without a heading, they’re top-level.
 - Setext headings (`===`/`---`) are minimally supported.
+- `--in-place` cannot be used with `--output` and requires an input file path (not stdin).
