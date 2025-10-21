@@ -38,16 +38,15 @@ def clean_perplexity_sources(text: str) -> str:
     # Remove the source links
     cleaned_text = source_link_pattern.sub("", text)
 
-    # Clean up any trailing invisible characters or extra spaces
+    # Clean up any trailing invisible characters but preserve all spacing and indentation
     # Remove zero-width characters and other invisible Unicode characters
     invisible_chars = re.compile(r"[\u200b-\u200f\ufeff\u2060]")
     cleaned_text = invisible_chars.sub("", cleaned_text)
 
-    # Clean up multiple spaces and trailing spaces at end of lines
-    cleaned_text = re.sub(r" +", " ", cleaned_text)  # Multiple spaces to single space
+    # Only clean up trailing spaces at end of lines, but preserve all other spacing
     cleaned_text = re.sub(
         r" +$", "", cleaned_text, flags=re.MULTILINE
-    )  # Trailing spaces
+    )  # Trailing spaces only
 
     return cleaned_text
 

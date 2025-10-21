@@ -88,6 +88,7 @@ cat input.md | python3 clean_perplexity_sources.py
 Features:
 - Removes source citations like `[autoscout24+2](https://example.com)`
 - Cleans invisible Unicode characters
-- Removes extra whitespace
+- Preserves exact indentation (tabs and spaces unchanged)
+- Only removes trailing spaces at end of lines
 - Preview mode shows exactly what will be changed
 - Works with files or stdin/stdout
