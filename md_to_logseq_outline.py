@@ -12,7 +12,9 @@ from typing import List, Optional, Tuple
 Heading = Tuple[int, str]  # (level, text)
 
 
-ATX_HEADING_RE = re.compile(r"^(?P<hashes>#{1,6})\s+(?P<text>.*?)\s*(?P<trailing>#+\s*)?$")
+ATX_HEADING_RE = re.compile(
+    r"^(?P<hashes>#{1,6})\s+(?P<text>.*?)\s*(?P<trailing>#+\s*)?$"
+)
 
 from utils import parse_atx_heading, is_setext_underline, make_indent
 
@@ -30,6 +32,7 @@ def parse_markdown_blocks(
 
     The parser supports:
     - ATX headings (e.g., "## Title")
+    - ATX headings with leading bullets (e.g., "- ## Title")
     - Setext headings (e.g., "Title" followed by "=====")
     - Paragraphs:
       - paragraph_mode == "lines": each non-empty line becomes a paragraph block
@@ -60,8 +63,14 @@ def parse_markdown_blocks(
             i += 1
             continue
 
-        # ATX heading (e.g., #, ##, ..., ######)
-        atx = parse_atx_heading(line)
+        # Check for ATX heading with optional leading bullet
+        stripped_line = line.strip()
+        if stripped_line.startswith("- "):
+            candidate_heading = stripped_line[2:].strip()
+        else:
+            candidate_heading = stripped_line
+
+        atx = parse_atx_heading(candidate_heading)
         if atx:
             if paragraph_mode == "blocks":
                 flush_paragraph()
@@ -77,14 +86,14 @@ def parse_markdown_blocks(
             if setext_level:
                 if paragraph_mode == "blocks":
                     flush_paragraph()
-                blocks.append(("heading", setext_level, line.strip()))
+                blocks.append(("heading", setext_level, stripped_line))
                 i += 2
                 continue
 
         # Otherwise, part of a paragraph
         if paragraph_mode == "lines":
             # Each non-empty line is its own paragraph block
-            blocks.append(("paragraph", None, line.strip()))
+            blocks.append(("paragraph", None, stripped_line))
             i += 1
         else:
             pending_paragraph_lines.append(line)
@@ -100,7 +109,7 @@ def convert_to_logseq_outline(markdown_text: str, paragraph_mode: str = "lines")
 
     Rules:
     - Heading level n becomes a bullet at indent (n - 1), content: "#"*n + " " + text
-    - Paragraph becomes a bullet at indent (current_heading_level or 0 if none)
+    - Paragraph becomes a bullet at indent (current_heading_level), making it a child of the heading
     - Indent uses two spaces per level
     """
     blocks = parse_markdown_blocks(markdown_text, paragraph_mode=paragraph_mode)
@@ -114,21 +123,24 @@ def convert_to_logseq_outline(markdown_text: str, paragraph_mode: str = "lines")
             outline_lines.append(f"{indent}- {'#' * level} {text}")
             current_heading_level = level
         elif kind == "paragraph":
-            base_indent_level = current_heading_level if current_heading_level > 0 else 0
+            # Content under a heading should be indented as a child of that heading
+            # This means using the heading's indentation level + 1
+            if current_heading_level > 0:
+                # Heading is at level (current_heading_level - 1), so content goes at current_heading_level
+                base_indent_level = current_heading_level
+            else:
+                # No heading seen yet, place at root level
+                base_indent_level = 0
+
             # Detect Logseq property lines of the form key:: value (no leading dash)
             candidate = text[2:].lstrip() if text.startswith("- ") else text
             if re.match(r"^[A-Za-z0-9_-][A-Za-z0-9 _-]*::", candidate):
                 indent = make_indent(base_indent_level, width=2)
                 outline_lines.append(f"{indent}{candidate}")
-            elif text.startswith("- "):
-                # If the source line already looks like a bullet, avoid creating "- -".
-                # Under a heading, treat it as a child bullet (deepen one level); at root, keep top level.
-                adjusted_indent_level = base_indent_level + (1 if base_indent_level > 0 else 0)
-                indent = make_indent(adjusted_indent_level, width=2)
-                outline_lines.append(f"{indent}- {candidate}")
             else:
+                # For all other content (including existing bullets), treat as child content
                 indent = make_indent(base_indent_level, width=2)
-                outline_lines.append(f"{indent}- {text}")
+                outline_lines.append(f"{indent}- {candidate}")
         else:
             # Fallback safety: treat unknown as a top-level paragraph
             outline_lines.append(f"- {text}")
@@ -185,7 +197,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Validate conflicting options
     if args.in_place and args.output:
-        print("Cannot use --in-place with --output. Choose one destination.", file=sys.stderr)
+        print(
+            "Cannot use --in-place with --output. Choose one destination.",
+            file=sys.stderr,
+        )
         return 2
 
     # Write output
@@ -210,5 +225,3 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
