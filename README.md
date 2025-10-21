@@ -61,6 +61,33 @@ python3 md_to_logseq_outline.py --paragraph-mode blocks -i input.md
 
 Notes:
 - ATX headings (e.g., `## Title`) become bullets like `- ## Title`.
-- Non-empty lines become bullets under the latest heading; without a heading, they’re top-level.
+- Non-empty lines become bullets under the latest heading; without a heading, they're top-level.
 - Setext headings (`===`/`---`) are minimally supported.
 - `--in-place` cannot be used with `--output` and requires an input file path (not stdin).
+
+### Perplexity Source Cleaner (`clean_perplexity_sources.py`)
+Removes Perplexity AI source citations from text content, cleaning up links like `[source+1](url)`.
+
+```
+# Clean and output to stdout
+python3 clean_perplexity_sources.py input.md
+
+# Save to a new file
+python3 clean_perplexity_sources.py input.md -o cleaned.md
+
+# Clean in-place (overwrite original)
+python3 clean_perplexity_sources.py input.md -i
+
+# Preview changes without applying
+python3 clean_perplexity_sources.py input.md --preview
+
+# Process from stdin
+cat input.md | python3 clean_perplexity_sources.py
+```
+
+Features:
+- Removes source citations like `[autoscout24+2](https://example.com)`
+- Cleans invisible Unicode characters
+- Removes extra whitespace
+- Preview mode shows exactly what will be changed
+- Works with files or stdin/stdout
